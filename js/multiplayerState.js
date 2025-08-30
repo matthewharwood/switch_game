@@ -104,10 +104,41 @@ export function joinRoom(code) {
     }
   });
   
-  // Subscribe to player list changes
-  room.get('players').on((data) => {
-    if (data) {
-      const playerList = Object.values(data).filter(p => p && typeof p === 'object');
+  // Track all players in the room
+  const playersMap = new Map();
+  
+  // First, load any existing players
+  room.get('players').once((allData) => {
+    if (allData) {
+      Object.keys(allData).forEach(key => {
+        if (!key.startsWith('_') && !key.startsWith('#') && allData[key] && allData[key].id) {
+          playersMap.set(key, allData[key]);
+        }
+      });
+      const initialPlayers = Array.from(playersMap.values()).filter(p => p && p.active);
+      console.log('Initial players found:', initialPlayers);
+      if (initialPlayers.length > 0) {
+        roomPlayers.value = initialPlayers;
+      }
+    }
+  });
+  
+  // Subscribe to individual player changes using map()
+  room.get('players').map().on((data, key) => {
+    if (key && !key.startsWith('_') && !key.startsWith('#')) {
+      if (data && data.id) {
+        // Player joined or updated
+        playersMap.set(key, data);
+        console.log('Player joined/updated:', key, data);
+      } else {
+        // Player left
+        playersMap.delete(key);
+        console.log('Player left:', key);
+      }
+      
+      // Update the roomPlayers signal with current active players
+      const playerList = Array.from(playersMap.values()).filter(p => p && p.active);
+      console.log('Current players in room:', playerList);
       roomPlayers.value = playerList;
       
       // Assign characters to players
@@ -143,36 +174,42 @@ export function joinRoom(code) {
     }
   });
   
-  // Check if room is full (4 players max)
-  room.get('players').once((data) => {
-    const activeCount = data ? Object.values(data).filter(p => p && p.active).length : 0;
-    if (activeCount >= 4) {
-      alert('Room is full! Maximum 4 players allowed.');
-      isConnected.value = false;
-      roomCode.value = '';
-      return;
-    }
-    
-    // Add current player to room
-    const playerData = {
-      id: localPlayerId.value,
-      name: playerName.value || `Player ${localPlayerId.value.substr(-4)}`,
-      active: true,
-      joinedAt: Date.now()
-    };
-    
-    console.log('Adding player to room:', playerData);
-    room.get('players').get(localPlayerId.value).put(playerData);
-  });
+  // Create player data first (so it's accessible in all scopes)
+  const playerData = {
+    id: localPlayerId.value,
+    name: playerName.value || `Player ${localPlayerId.value.substr(-4)}`,
+    active: true,
+    joinedAt: Date.now()
+  };
+  
+  // Add current player to room immediately (don't wait for checks)
+  console.log('Adding player to room:', playerData);
+  room.get('players').get(localPlayerId.value).put(playerData);
+  
+  // Also add to local state immediately for instant UI feedback
+  if (!roomPlayers.value.find(p => p.id === localPlayerId.value)) {
+    roomPlayers.value = [...roomPlayers.value, playerData];
+  }
+  
+  // Also add to local state immediately for instant feedback
+  setTimeout(() => {
+    // Give a moment for the subscription to set up, then force a refresh
+    room.get('players').get(localPlayerId.value).once((data) => {
+      if (!data) {
+        // If our data didn't persist, try again
+        console.log('Retrying player addition...');
+        room.get('players').get(localPlayerId.value).put(playerData);
+      }
+    });
+  }, 100);
   
   // Handle disconnect on page unload
   window.addEventListener('beforeunload', () => {
-    room.get('players').get(localPlayerId.value).put({
-      ...playerData,
-      active: false
-    });
-    if (!isConnected.value) {
-      clearRoomFromURL();
+    if (isConnected.value && localPlayerId.value) {
+      room.get('players').get(localPlayerId.value).put({
+        ...playerData,
+        active: false
+      });
     }
   });
 }

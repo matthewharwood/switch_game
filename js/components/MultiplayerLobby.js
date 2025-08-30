@@ -232,7 +232,12 @@ export class MultiplayerLobby extends HTMLElement {
     const playerList = this.shadowRoot.querySelector('.player-list');
     if (playerList) {
       const assignments = characterAssignments.value;
-      let html = `<div style="font-weight: bold; margin-bottom: 10px;">Players in Room (${roomPlayers.value.filter(p => p.active).length}/4):</div>`;
+      const activePlayerCount = roomPlayers.value.filter(p => p && p.active).length;
+      let html = `<div style="font-weight: bold; margin-bottom: 10px;">Players in Room (${activePlayerCount}/4):</div>`;
+      
+      // Debug info
+      console.log('Room players:', roomPlayers.value);
+      console.log('Active players count:', activePlayerCount);
       
       if (!roomStarted.value && gameReady.value) {
         html += '<div style="background: #e8f5e9; padding: 10px; border-radius: 6px; margin-bottom: 10px; color: #2e7d32;">✅ Ready to start! Host can start the game.</div>';
@@ -244,8 +249,8 @@ export class MultiplayerLobby extends HTMLElement {
       
       // Show active players
       const activePlayers = roomPlayers.value
-        .filter(p => p.active)
-        .sort((a, b) => a.joinedAt - b.joinedAt)
+        .filter(p => p && p.active)
+        .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0))
         .slice(0, 4);
         
       activePlayers.forEach(p => {
