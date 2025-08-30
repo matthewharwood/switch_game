@@ -33,6 +33,15 @@ export class GameController extends HTMLElement {
     
     // Subscribe to state changes
     this.cleanup = effect(() => {
+      // Explicitly reference signals we need to track
+      const gameStartedValue = gameStarted.value;
+      const gameOverValue = gameOver.value;
+      const messageValue = message.value;
+      const currentPlayerNameValue = currentPlayerName.value;
+      const isConnectedValue = isConnected.value;
+      const roomStartedValue = roomStarted.value;
+      const playerCharacterValue = playerCharacter.value;
+      
       this.updateDisplay();
     });
     
@@ -74,6 +83,11 @@ export class GameController extends HTMLElement {
     
     if (gameContainer && waitingRoom) {
       const showGame = !isConnected.value || roomStarted.value;
+      console.log('GameController updateDisplay:', { 
+        isConnected: isConnected.value, 
+        roomStarted: roomStarted.value, 
+        showGame 
+      });
       gameContainer.style.display = showGame ? 'block' : 'none';
       waitingRoom.style.display = showGame ? 'none' : 'block';
     }
@@ -122,8 +136,6 @@ export class GameController extends HTMLElement {
   }
   
   render() {
-    const showGame = !isConnected.value || roomStarted.value;
-    
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -281,7 +293,7 @@ export class GameController extends HTMLElement {
           font-size: 1.1em;
         }
       </style>
-      <div class="game-container" style="${!showGame ? 'display: none;' : ''}">
+      <div class="game-container">
         <h1 class="title">Switch Bomb Game ${isConnected.value ? '<span class="multiplayer-status">ONLINE</span>' : ''}</h1>
         
         <div class="players-container">
@@ -314,13 +326,11 @@ export class GameController extends HTMLElement {
         </div>
       </div>
       
-      ${!showGame ? `
-        <div class="waiting-room">
-          <h2>⏳ Waiting for host to start the game...</h2>
-          <p>The host needs to press "Start Game" once enough players have joined.</p>
-          <p style="margin-top: 20px; font-size: 0.9em;">Check the Multiplayer Lobby above to see who's in the room.</p>
-        </div>
-      ` : ''}
+      <div class="waiting-room">
+        <h2>⏳ Waiting for host to start the game...</h2>
+        <p>The host needs to press "Start Game" once enough players have joined.</p>
+        <p style="margin-top: 20px; font-size: 0.9em;">Check the Multiplayer Lobby above to see who's in the room.</p>
+      </div>
     `;
   }
 }

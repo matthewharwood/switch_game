@@ -41,6 +41,8 @@ export const characterAssignments = signal({});
 export const gameReady = signal(false);
 export const roomStarted = signal(false);
 
+console.log('Initial roomStarted value:', roomStarted.value);
+
 // Generate a unique player ID
 function generatePlayerId() {
   return 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -80,11 +82,21 @@ export function joinRoom(code) {
   
   const room = gun.get(`switch-game-room-${roomCode.value}`);
   
-  // Subscribe to room started state
-  room.get('roomStarted').on((data) => {
-    if (data !== undefined) {
+  // Subscribe to room started state - and get initial value
+  room.get('roomStarted').once((data) => {
+    console.log('Initial roomStarted value from room:', data);
+    if (data !== undefined && data !== null) {
       roomStarted.value = data;
-      console.log('Room started state:', data);
+      console.log('Room started state initialized to:', roomStarted.value);
+    }
+  });
+  
+  // Subscribe to room started state changes
+  room.get('roomStarted').on((data) => {
+    console.log('Received roomStarted update:', data);
+    if (data !== undefined && data !== null) {
+      roomStarted.value = data;
+      console.log('Room started state updated to:', roomStarted.value);
     }
   });
   
@@ -238,9 +250,15 @@ function syncGameState() {
 export function startRoomGame() {
   if (!isHost.value) return;
   
+  console.log('Host starting room game...');
   const room = gun.get(`switch-game-room-${roomCode.value}`);
+  
+  // Set roomStarted in GUN
   room.get('roomStarted').put(true);
+  
+  // Update local signal
   roomStarted.value = true;
+  console.log('Room started set to true, roomStarted.value:', roomStarted.value);
   
   // Initialize the game
   localResetGame();
