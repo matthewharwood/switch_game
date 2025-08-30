@@ -13,7 +13,8 @@ import {
   characterAssignments,
   localPlayerId,
   playerCharacter,
-  roomStarted
+  roomStarted,
+  isHost
 } from '../multiplayerState.js';
 import { Mario } from './Mario.js';
 import { Luigi } from './Luigi.js';
@@ -25,6 +26,24 @@ export class GameController extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this.cleanup = null;
+    this.lastTurnState = false;
+  }
+  
+  playTurnSound() {
+    // Create a simple beep sound using Web Audio API
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.value = 800;
+    oscillator.type = 'sine';
+    gainNode.gain.value = 0.1;
+    
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.1);
   }
   
   connectedCallback() {
@@ -41,6 +60,7 @@ export class GameController extends HTMLElement {
       const isConnectedValue = isConnected.value;
       const roomStartedValue = roomStarted.value;
       const playerCharacterValue = playerCharacter.value;
+      const isHostValue = isHost.value;
       
       this.updateDisplay();
     });
@@ -98,20 +118,49 @@ export class GameController extends HTMLElement {
     
     if (messageEl) {
       messageEl.textContent = message.value;
+      
+      // Add special prompt for host after bomb hit
+      if (gameOver.value && isHost.value && isConnected.value) {
+        messageEl.innerHTML = `
+          ${message.value}<br>
+          <span style="font-size: 0.9em; color: #666; margin-top: 10px; display: block;">
+            As the host, press "Restart Game" below to start a new round!
+          </span>
+        `;
+      }
     }
     
     if (currentPlayerEl) {
       if (gameStarted.value && !gameOver.value) {
         if (isConnected.value && playerCharacter.value) {
           const isTurn = currentPlayerName.value === playerCharacter.value;
-          currentPlayerEl.innerHTML = `
-            <div>Current Turn: <strong style="color: ${getCharacterColor(currentPlayerName.value)}">${currentPlayerName.value}</strong></div>
-            <div style="font-size: 0.9em; margin-top: 5px;">You are: <strong style="color: ${getCharacterColor(playerCharacter.value)}">${playerCharacter.value}</strong> ${isTurn ? '(Your Turn!)' : ''}</div>
-          `;
+          
+          // Add pulsing animation for current player's turn
+          if (isTurn) {
+            currentPlayerEl.className = 'current-player your-turn';
+            currentPlayerEl.innerHTML = `
+              <div class="turn-alert">🎮 YOUR TURN!</div>
+              <div>You are: <strong style="color: ${getCharacterColor(playerCharacter.value)}">${playerCharacter.value}</strong></div>
+            `;
+            
+            // Play a subtle sound when it becomes your turn
+            if (!this.lastTurnState && isTurn) {
+              this.playTurnSound();
+            }
+          } else {
+            currentPlayerEl.className = 'current-player';
+            currentPlayerEl.innerHTML = `
+              <div>Current Turn: <strong style="color: ${getCharacterColor(currentPlayerName.value)}">${currentPlayerName.value}</strong></div>
+              <div style="font-size: 0.9em; margin-top: 5px;">You are: <strong style="color: ${getCharacterColor(playerCharacter.value)}">${playerCharacter.value}</strong></div>
+            `;
+          }
+          this.lastTurnState = isTurn;
         } else {
+          currentPlayerEl.className = 'current-player';
           currentPlayerEl.textContent = `Current Player: ${currentPlayerName.value}`;
         }
       } else {
+        currentPlayerEl.className = 'current-player';
         currentPlayerEl.textContent = '';
       }
     }
@@ -123,6 +172,13 @@ export class GameController extends HTMLElement {
     
     if (startBtn) {
       startBtn.textContent = gameStarted.value ? 'Restart Game' : 'Start Game';
+      
+      // Only show start button for host in multiplayer, or always in single player
+      if (isConnected.value && !isHost.value) {
+        startBtn.style.display = 'none';
+      } else {
+        startBtn.style.display = 'inline-block';
+      }
     }
     
     // Update player indicators
@@ -173,6 +229,30 @@ export class GameController extends HTMLElement {
           font-size: 1.1em;
           color: #666;
           margin: 10px 0;
+        }
+        
+        .current-player.your-turn {
+          animation: pulse 1s infinite;
+          color: #333;
+        }
+        
+        .turn-alert {
+          font-size: 1.5em;
+          font-weight: bold;
+          color: #ff6b00;
+          margin-bottom: 10px;
+          animation: bounce 0.5s ease-in-out infinite alternate;
+        }
+        
+        @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+          100% { transform: scale(1); }
+        }
+        
+        @keyframes bounce {
+          from { transform: translateY(0px); }
+          to { transform: translateY(-5px); }
         }
         
         .switches-container {

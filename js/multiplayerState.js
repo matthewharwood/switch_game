@@ -13,6 +13,7 @@ import {
   gameStarted, 
   message,
   players,
+  bombHit,
   resetGame as localResetGame,
   pressSwitch as localPressSwitch
 } from './gameState.js';
@@ -113,6 +114,8 @@ export function joinRoom(code) {
       if (data.switchStates !== undefined) switchStates.value = data.switchStates;
       if (data.gameStarted !== undefined) gameStarted.value = data.gameStarted;
       if (data.message !== undefined) message.value = data.message;
+      if (data.players !== undefined) players.value = data.players;
+      if (data.bombHit !== undefined) bombHit.value = data.bombHit;
     }
   });
   
@@ -242,6 +245,8 @@ function syncGameState() {
     switchStates: switchStates.value,
     gameStarted: gameStarted.value,
     message: message.value,
+    players: players.value, // Sync the players array
+    bombHit: bombHit.value, // Sync bomb hit for sound
     timestamp: Date.now()
   });
 }
@@ -350,7 +355,8 @@ effect(() => {
       bombIndex.value,
       switchStates.value,
       gameStarted.value,
-      message.value
+      message.value,
+      bombHit.value
     ];
     syncGameState();
   }

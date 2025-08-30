@@ -10,6 +10,7 @@ export const switchStates = signal([false, false, false, false, false]);
 export const players = signal(['Mario', 'Luigi', 'Yoshi', 'Birdo']);
 export const gameStarted = signal(false);
 export const message = signal('Press Start to begin!');
+export const bombHit = signal(false);
 
 // Computed values
 export const currentPlayerName = computed(() => {
@@ -40,6 +41,17 @@ function playBoomSound() {
   });
 }
 
+// Play boom sound when bomb is hit
+effect(() => {
+  if (bombHit.value) {
+    playBoomSound();
+    // Reset bombHit after playing
+    setTimeout(() => {
+      bombHit.value = false;
+    }, 100);
+  }
+});
+
 // Game functions
 export function resetGame() {
   currentPlayer.value = 0;
@@ -49,6 +61,7 @@ export function resetGame() {
   bombIndex.value = Math.floor(Math.random() * 5);
   switchStates.value = [false, false, false, false, false];
   gameStarted.value = true;
+  bombHit.value = false;
   message.value = `${currentPlayerName.value}'s turn - Pick a switch (1-5)`;
 }
 
@@ -66,7 +79,7 @@ export function pressSwitch(index) {
     gameOver.value = true;
     loser.value = currentPlayerName.value;
     message.value = `💥 BOOM! ${currentPlayerName.value} hit the bomb and lost!`;
-    playBoomSound(); // Play the boom sound effect
+    bombHit.value = true; // Trigger bomb sound for all players
     return true;
   }
   
