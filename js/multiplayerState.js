@@ -101,20 +101,50 @@ export function joinRoom(code) {
     }
   });
   
+  // Track last sync timestamp to avoid feedback loops
+  let lastSyncTimestamp = 0;
+  
   // Subscribe to game state changes
   room.get('gameState').on((data) => {
     console.log('Received game state:', data);
-    if (data && !isHost.value) {
-      // Update local state from multiplayer data
+    if (data && data.timestamp) {
+      // Skip if this is an old update we've already processed
+      if (data.timestamp <= lastSyncTimestamp) {
+        console.log('Skipping old game state update');
+        return;
+      }
+      lastSyncTimestamp = data.timestamp;
+      
+      // Update local state from multiplayer data for all players
+      // This ensures everyone stays in sync
       if (data.currentPlayer !== undefined) currentPlayer.value = data.currentPlayer;
       if (data.gameOver !== undefined) gameOver.value = data.gameOver;
       if (data.winner !== undefined) winner.value = data.winner;
       if (data.loser !== undefined) loser.value = data.loser;
       if (data.bombIndex !== undefined) bombIndex.value = data.bombIndex;
-      if (data.switchStates !== undefined) switchStates.value = data.switchStates;
+      if (data.switchStates !== undefined) {
+        try {
+          const parsedStates = typeof data.switchStates === 'string' 
+            ? JSON.parse(data.switchStates) 
+            : data.switchStates;
+          console.log('Updating switch states:', parsedStates);
+          switchStates.value = parsedStates;
+        } catch (e) {
+          console.error('Failed to parse switch states:', e);
+        }
+      }
       if (data.gameStarted !== undefined) gameStarted.value = data.gameStarted;
       if (data.message !== undefined) message.value = data.message;
-      if (data.players !== undefined) players.value = data.players;
+      if (data.players !== undefined) {
+        try {
+          const parsedPlayers = typeof data.players === 'string'
+            ? JSON.parse(data.players)
+            : data.players;
+          players.value = parsedPlayers;
+        } catch (e) {
+          console.error('Failed to parse players:', e);
+        }
+      }
       if (data.bombHit !== undefined) bombHit.value = data.bombHit;
     }
   });
@@ -236,19 +266,22 @@ function syncGameState() {
   
   const room = gun.get(`switch-game-room-${roomCode.value}`);
   
-  room.get('gameState').put({
+  const stateToSync = {
     currentPlayer: currentPlayer.value,
     gameOver: gameOver.value,
     winner: winner.value,
     loser: loser.value,
     bombIndex: bombIndex.value,
-    switchStates: switchStates.value,
+    switchStates: JSON.stringify(switchStates.value), // Serialize array for GUN
     gameStarted: gameStarted.value,
     message: message.value,
-    players: players.value, // Sync the players array
+    players: JSON.stringify(players.value), // Serialize array for GUN
     bombHit: bombHit.value, // Sync bomb hit for sound
     timestamp: Date.now()
-  });
+  };
+  
+  console.log('Host syncing game state:', stateToSync);
+  room.get('gameState').put(stateToSync);
 }
 
 // Override local game functions with multiplayer versions
@@ -267,7 +300,8 @@ export function startRoomGame() {
   
   // Initialize the game
   localResetGame();
-  syncGameState();
+  // Force immediate sync after starting game
+  setTimeout(() => syncGameState(), 50);
 }
 
 export function resetGameMultiplayer() {
@@ -277,10 +311,13 @@ export function resetGameMultiplayer() {
   }
   
   if (isHost.value) {
+    console.log('Host resetting game');
     localResetGame();
-    syncGameState();
+    // Force immediate sync after reset
+    setTimeout(() => syncGameState(), 50);
   } else {
     // Request host to reset game
+    console.log('Requesting host to reset game');
     const room = gun.get(`switch-game-room-${roomCode.value}`);
     room.get('requests').get('reset').put({
       from: localPlayerId.value,
@@ -298,20 +335,37 @@ export function pressSwitchMultiplayer(index) {
   const currentPlayerCharacter = players.value[currentPlayer.value % players.value.length];
   const myCharacter = playerCharacter.value;
   
+  console.log('Press switch attempt:', {
+    index,
+    currentPlayerCharacter,
+    myCharacter,
+    isMyTurn: currentPlayerCharacter === myCharacter,
+    currentPlayer: currentPlayer.value,
+    players: players.value
+  });
+  
   if (currentPlayerCharacter !== myCharacter && isConnected.value) {
     message.value = `It's ${currentPlayerCharacter}'s turn!`;
     return false;
   }
   
   if (isHost.value) {
+    console.log('Host pressing switch:', index);
     const result = localPressSwitch(index);
-    syncGameState();
+    console.log('Press result:', result, 'New state:', {
+      currentPlayer: currentPlayer.value,
+      switchStates: switchStates.value
+    });
+    // Immediate sync after press
+    setTimeout(() => syncGameState(), 50);
     return result;
   } else {
     // Send switch press to host
+    console.log('Sending press request to host:', index);
     const room = gun.get(`switch-game-room-${roomCode.value}`);
     room.get('requests').get('press').put({
       from: localPlayerId.value,
+      character: myCharacter,
       index: index,
       timestamp: Date.now()
     });
@@ -329,7 +383,8 @@ effect(() => {
     if (data && data.timestamp > Date.now() - 5000) {
       console.log('Host received reset request');
       localResetGame();
-      syncGameState();
+      // Immediate sync after reset
+      setTimeout(() => syncGameState(), 50);
     }
   });
   
@@ -337,27 +392,25 @@ effect(() => {
   room.get('requests').get('press').on((data) => {
     if (data && data.timestamp > Date.now() - 5000) {
       console.log('Host received press request:', data);
-      localPressSwitch(data.index);
-      syncGameState();
+      
+      // Validate it's the correct player's turn
+      const currentPlayerCharacter = players.value[currentPlayer.value % players.value.length];
+      if (data.character && data.character !== currentPlayerCharacter) {
+        console.log('Ignoring press request - not player\'s turn:', data.character, 'vs', currentPlayerCharacter);
+        return;
+      }
+      
+      // Process the switch press
+      const result = localPressSwitch(data.index);
+      console.log('Press result:', result, 'New state:', {
+        currentPlayer: currentPlayer.value,
+        switchStates: switchStates.value
+      });
+      // Immediate sync after press
+      setTimeout(() => syncGameState(), 50);
     }
   });
 });
 
-// Auto-sync when local state changes (host only)
-effect(() => {
-  if (isHost.value && isConnected.value) {
-    // Trigger sync on any state change
-    const trigger = [
-      currentPlayer.value,
-      gameOver.value,
-      winner.value,
-      loser.value,
-      bombIndex.value,
-      switchStates.value,
-      gameStarted.value,
-      message.value,
-      bombHit.value
-    ];
-    syncGameState();
-  }
-});
+// Removed auto-sync to prevent feedback loops
+// Host will manually sync after specific actions
