@@ -21,6 +21,7 @@ export class MultiplayerLobby extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this.cleanup = null;
+    this.hasUrlRoom = false;
   }
   
   connectedCallback() {
@@ -29,12 +30,31 @@ export class MultiplayerLobby extends HTMLElement {
     
     // Check for room code in URL on load
     const urlRoomCode = getRoomCodeFromURL();
+    this.hasUrlRoom = !!urlRoomCode;
+    
     if (urlRoomCode && !isConnected.value) {
-      // Auto-show join form with room code
+      // Auto-show join form with room code and focus name input
       setTimeout(() => {
         const codeInput = this.shadowRoot.querySelector('#room-code');
+        const nameInput = this.shadowRoot.querySelector('#player-name');
+        const joinSection = this.shadowRoot.querySelector('.join-section');
+        
         if (codeInput) {
           codeInput.value = urlRoomCode;
+        }
+        
+        // Show join section and highlight it
+        if (joinSection) {
+          joinSection.style.border = '2px solid #4CAF50';
+          joinSection.style.padding = '15px';
+          joinSection.style.borderRadius = '8px';
+          joinSection.style.background = '#f1f8f4';
+        }
+        
+        // Focus name input for quick entry
+        if (nameInput) {
+          nameInput.focus();
+          nameInput.placeholder = 'Enter your name to join room ' + urlRoomCode;
         }
       }, 100);
     }
@@ -87,27 +107,43 @@ export class MultiplayerLobby extends HTMLElement {
     const codeInput = this.shadowRoot.querySelector('#room-code');
     if (joinBtn && codeInput) {
       joinBtn.addEventListener('click', () => {
-        const nameInputValue = nameInput ? nameInput.value.trim() : '';
+        let nameInputValue = nameInput ? nameInput.value.trim() : '';
+        
+        // Auto-generate name if empty
         if (!nameInputValue) {
-          alert('Please enter your name first!');
-          nameInput?.focus();
-          return;
+          // Generate a default name
+          nameInputValue = 'Player' + Math.floor(Math.random() * 1000);
+          if (nameInput) {
+            nameInput.value = nameInputValue;
+          }
         }
+        
         if (!codeInput.value.trim()) {
           alert('Please enter a room code!');
           codeInput.focus();
           return;
         }
+        
         playerName.value = nameInputValue;
+        console.log('Joining room with name:', nameInputValue, 'and code:', codeInput.value);
         joinRoom(codeInput.value);
       });
       
-      // Allow joining with Enter key
+      // Allow joining with Enter key from either input
       codeInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
           joinBtn.click();
         }
       });
+      
+      // Also allow Enter from name input
+      if (nameInput) {
+        nameInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter' && codeInput.value.trim()) {
+            joinBtn.click();
+          }
+        });
+      }
     }
     
     // Copy room link button
@@ -512,9 +548,16 @@ export class MultiplayerLobby extends HTMLElement {
       <div class="connection-status">Not Connected</div>
       
       <div class="lobby-section">
+        ${this.hasUrlRoom ? `
+          <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; border: 2px solid #2196F3;">
+            <div style="font-size: 1.2em; color: #1565c0; margin-bottom: 8px; font-weight: bold;">🔗 Joining room from shared link!</div>
+            <div style="color: #555; font-size: 0.95em;">Enter any name below (or leave blank) and click "Join Room"</div>
+          </div>
+        ` : ''}
+        
         <div class="input-group">
-          <label for="player-name">Your Name:</label>
-          <input type="text" id="player-name" placeholder="Enter your name" maxlength="20">
+          <label for="player-name">Your Name: <span style="color: #999; font-size: 0.85em;">(Optional - will auto-generate)</span></label>
+          <input type="text" id="player-name" placeholder="Enter your name or leave blank for auto" maxlength="20">
         </div>
         
         <div class="button-group">
@@ -523,13 +566,15 @@ export class MultiplayerLobby extends HTMLElement {
         
         <div class="divider">OR</div>
         
-        <div class="input-group">
-          <label for="room-code">Room Code:</label>
-          <input type="text" id="room-code" placeholder="Enter room code" maxlength="6" style="text-transform: uppercase;">
-        </div>
-        
-        <div class="button-group">
-          <button id="join-room">Join Room</button>
+        <div class="join-section">
+          <div class="input-group">
+            <label for="room-code">Room Code:</label>
+            <input type="text" id="room-code" placeholder="Enter room code" maxlength="6" style="text-transform: uppercase;">
+          </div>
+          
+          <div class="button-group">
+            <button id="join-room">Join Room</button>
+          </div>
         </div>
       </div>
       

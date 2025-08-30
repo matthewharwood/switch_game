@@ -68,6 +68,16 @@ export class GameController extends HTMLElement {
   }
   
   updateDisplay() {
+    // Show/hide game based on connection and room status
+    const gameContainer = this.shadowRoot.querySelector('.game-container');
+    const waitingRoom = this.shadowRoot.querySelector('.waiting-room');
+    
+    if (gameContainer && waitingRoom) {
+      const showGame = !isConnected.value || roomStarted.value;
+      gameContainer.style.display = showGame ? 'block' : 'none';
+      waitingRoom.style.display = showGame ? 'none' : 'block';
+    }
+    
     const messageEl = this.shadowRoot.querySelector('.message');
     const currentPlayerEl = this.shadowRoot.querySelector('.current-player');
     const startBtn = this.shadowRoot.querySelector('.start-button');
@@ -251,6 +261,25 @@ export class GameController extends HTMLElement {
             min-height: 40px;
           }
         }
+        
+        .waiting-room {
+          text-align: center;
+          padding: 40px 20px;
+          background: #f5f5f5;
+          border-radius: 12px;
+          margin: 20px auto;
+          max-width: 600px;
+        }
+        
+        .waiting-room h2 {
+          color: #666;
+          margin-bottom: 15px;
+        }
+        
+        .waiting-room p {
+          color: #999;
+          font-size: 1.1em;
+        }
       </style>
       <div class="game-container" style="${!showGame ? 'display: none;' : ''}">
         <h1 class="title">Switch Bomb Game ${isConnected.value ? '<span class="multiplayer-status">ONLINE</span>' : ''}</h1>
@@ -287,8 +316,9 @@ export class GameController extends HTMLElement {
       
       ${!showGame ? `
         <div class="waiting-room">
-          <h2>Waiting for host to start the game...</h2>
-          <p>Players will appear here as they join the room.</p>
+          <h2>⏳ Waiting for host to start the game...</h2>
+          <p>The host needs to press "Start Game" once enough players have joined.</p>
+          <p style="margin-top: 20px; font-size: 0.9em;">Check the Multiplayer Lobby above to see who's in the room.</p>
         </div>
       ` : ''}
     `;
