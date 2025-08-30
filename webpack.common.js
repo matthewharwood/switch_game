@@ -9,4 +9,14 @@ module.exports = {
     clean: true,
     filename: './js/app.js',
   },
+  module: {
+    unknownContextCritical: false,
+    exprContextCritical: false,
+  },
+  ignoreWarnings: [
+    {
+      module: /gun/,
+      message: /Critical dependency/,
+    },
+  ],
 };
