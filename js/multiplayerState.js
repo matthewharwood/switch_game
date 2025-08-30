@@ -16,8 +16,17 @@ import {
   pressSwitch as localPressSwitch
 } from './gameState.js';
 
-// Initialize GUN with public relay servers
-const gun = Gun(['https://gun-manhattan.herokuapp.com/gun', 'https://gun-us.herokuapp.com/gun']);
+// Initialize GUN with public relay servers for peer-to-peer communication
+// These are relay servers that help browsers connect to each other
+const gun = Gun({
+  peers: [
+    'https://relay.peer.ooo/gun',  // Public relay server
+    'https://gun-manhattan.herokuapp.com/gun',  // Backup relay
+    'https://e2eec.herokuapp.com/gun'  // Another backup
+  ],
+  localStorage: false,  // Use memory instead of localStorage for better mobile support
+  radisk: false
+});
 
 // Room management
 export const roomCode = signal('');
@@ -26,6 +35,8 @@ export const isConnected = signal(false);
 export const playerName = signal('');
 export const roomPlayers = signal([]);
 export const localPlayerId = signal('');
+export const playerCharacter = signal('');
+export const characterAssignments = signal({});
 
 // Generate a unique player ID
 function generatePlayerId() {
@@ -34,6 +45,17 @@ function generatePlayerId() {
 
 // Initialize local player
 localPlayerId.value = generatePlayerId();
+
+// Helper function to get character color
+function getCharacterColor(character) {
+  const colors = {
+    'Mario': 'red',
+    'Luigi': 'green',
+    'Yoshi': 'blue',
+    'Birdo': 'pink'
+  };
+  return colors[character] || 'gray';
+}
 
 // Create or join a room
 export function createRoom() {
@@ -47,6 +69,7 @@ export function createRoom() {
 export function joinRoom(code) {
   if (!code) return;
   
+  console.log('Joining room:', code);
   roomCode.value = code.toUpperCase();
   isConnected.value = true;
   
@@ -54,6 +77,7 @@ export function joinRoom(code) {
   
   // Subscribe to game state changes
   room.get('gameState').on((data) => {
+    console.log('Received game state:', data);
     if (data && !isHost.value) {
       // Update local state from multiplayer data
       if (data.currentPlayer !== undefined) currentPlayer.value = data.currentPlayer;
@@ -73,27 +97,57 @@ export function joinRoom(code) {
       const playerList = Object.values(data).filter(p => p && typeof p === 'object');
       roomPlayers.value = playerList;
       
-      // Update the game players list with actual player names
-      const activePlayerNames = playerList
+      // Assign characters to players
+      const characters = ['Mario', 'Luigi', 'Yoshi', 'Birdo'];
+      const activePlayers = playerList
         .filter(p => p.active)
-        .map(p => p.name)
+        .sort((a, b) => a.joinedAt - b.joinedAt) // Sort by join time
         .slice(0, 4); // Max 4 players
       
-      if (activePlayerNames.length > 0) {
-        players.value = activePlayerNames;
+      const newAssignments = {};
+      activePlayers.forEach((player, index) => {
+        newAssignments[player.id] = {
+          name: player.name,
+          character: characters[index],
+          color: getCharacterColor(characters[index])
+        };
+        
+        // Set local player's character
+        if (player.id === localPlayerId.value) {
+          playerCharacter.value = characters[index];
+        }
+      });
+      
+      characterAssignments.value = newAssignments;
+      
+      // Update the game players list with character names for display
+      if (activePlayers.length > 0) {
+        players.value = activePlayers.map(p => newAssignments[p.id].character);
       }
     }
   });
   
-  // Add current player to room
-  const playerData = {
-    id: localPlayerId.value,
-    name: playerName.value || `Player ${localPlayerId.value.substr(-4)}`,
-    active: true,
-    joinedAt: Date.now()
-  };
-  
-  room.get('players').get(localPlayerId.value).put(playerData);
+  // Check if room is full (4 players max)
+  room.get('players').once((data) => {
+    const activeCount = data ? Object.values(data).filter(p => p && p.active).length : 0;
+    if (activeCount >= 4) {
+      alert('Room is full! Maximum 4 players allowed.');
+      isConnected.value = false;
+      roomCode.value = '';
+      return;
+    }
+    
+    // Add current player to room
+    const playerData = {
+      id: localPlayerId.value,
+      name: playerName.value || `Player ${localPlayerId.value.substr(-4)}`,
+      active: true,
+      joinedAt: Date.now()
+    };
+    
+    console.log('Adding player to room:', playerData);
+    room.get('players').get(localPlayerId.value).put(playerData);
+  });
   
   // Handle disconnect on page unload
   window.addEventListener('beforeunload', () => {
@@ -149,12 +203,12 @@ export function pressSwitchMultiplayer(index) {
     return localPressSwitch(index);
   }
   
-  // Check if it's this player's turn
-  const currentPlayerName = players.value[currentPlayer.value % players.value.length];
-  const myName = playerName.value || `Player ${localPlayerId.value.substr(-4)}`;
+  // Check if it's this player's turn using character assignment
+  const currentPlayerCharacter = players.value[currentPlayer.value % players.value.length];
+  const myCharacter = playerCharacter.value;
   
-  if (currentPlayerName !== myName && isConnected.value) {
-    message.value = `It's ${currentPlayerName}'s turn!`;
+  if (currentPlayerCharacter !== myCharacter && isConnected.value) {
+    message.value = `It's ${currentPlayerCharacter}'s turn!`;
     return false;
   }
   
@@ -174,29 +228,29 @@ export function pressSwitchMultiplayer(index) {
 }
 
 // Listen for requests if host
-if (isHost.value) {
-  effect(() => {
-    if (!roomCode.value) return;
+effect(() => {
+  if (!isHost.value || !roomCode.value) return;
     
     const room = gun.get(`switch-game-room-${roomCode.value}`);
     
-    // Listen for reset requests
-    room.get('requests').get('reset').on((data) => {
-      if (data && data.timestamp > Date.now() - 5000) {
-        localResetGame();
-        syncGameState();
-      }
-    });
-    
-    // Listen for press requests
-    room.get('requests').get('press').on((data) => {
-      if (data && data.timestamp > Date.now() - 5000) {
-        localPressSwitch(data.index);
-        syncGameState();
-      }
-    });
+  // Listen for reset requests
+  room.get('requests').get('reset').on((data) => {
+    if (data && data.timestamp > Date.now() - 5000) {
+      console.log('Host received reset request');
+      localResetGame();
+      syncGameState();
+    }
   });
-}
+  
+  // Listen for press requests
+  room.get('requests').get('press').on((data) => {
+    if (data && data.timestamp > Date.now() - 5000) {
+      console.log('Host received press request:', data);
+      localPressSwitch(data.index);
+      syncGameState();
+    }
+  });
+});
 
 // Auto-sync when local state changes (host only)
 effect(() => {

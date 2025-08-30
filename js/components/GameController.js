@@ -9,7 +9,10 @@ import {
 import {
   resetGameMultiplayer,
   pressSwitchMultiplayer,
-  isConnected
+  isConnected,
+  characterAssignments,
+  localPlayerId,
+  playerCharacter
 } from '../multiplayerState.js';
 import { Mario } from './Mario.js';
 import { Luigi } from './Luigi.js';
@@ -73,9 +76,24 @@ export class GameController extends HTMLElement {
     }
     
     if (currentPlayerEl) {
-      currentPlayerEl.textContent = gameStarted.value && !gameOver.value 
-        ? `Current Player: ${currentPlayerName.value}` 
-        : '';
+      if (gameStarted.value && !gameOver.value) {
+        if (isConnected.value && playerCharacter.value) {
+          const isTurn = currentPlayerName.value === playerCharacter.value;
+          currentPlayerEl.innerHTML = `
+            <div>Current Turn: <strong style="color: ${getCharacterColor(currentPlayerName.value)}">${currentPlayerName.value}</strong></div>
+            <div style="font-size: 0.9em; margin-top: 5px;">You are: <strong style="color: ${getCharacterColor(playerCharacter.value)}">${playerCharacter.value}</strong> ${isTurn ? '(Your Turn!)' : ''}</div>
+          `;
+        } else {
+          currentPlayerEl.textContent = `Current Player: ${currentPlayerName.value}`;
+        }
+      } else {
+        currentPlayerEl.textContent = '';
+      }
+    }
+    
+    function getCharacterColor(character) {
+      const colors = { 'Mario': 'red', 'Luigi': 'green', 'Yoshi': 'blue', 'Birdo': 'pink' };
+      return colors[character] || 'gray';
     }
     
     if (startBtn) {

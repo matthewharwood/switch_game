@@ -5,6 +5,9 @@ import {
   isConnected, 
   playerName,
   roomPlayers,
+  playerCharacter,
+  characterAssignments,
+  localPlayerId,
   createRoom,
   joinRoom
 } from '../multiplayerState.js';
@@ -19,6 +22,12 @@ export class MultiplayerLobby extends HTMLElement {
   connectedCallback() {
     this.render();
     this.setupEventListeners();
+    
+    // Set initial player name if exists
+    const nameInput = this.shadowRoot.querySelector('#player-name');
+    if (nameInput && playerName.value) {
+      nameInput.value = playerName.value;
+    }
     
     // Subscribe to state changes
     this.cleanup = effect(() => {
@@ -45,10 +54,13 @@ export class MultiplayerLobby extends HTMLElement {
     const createBtn = this.shadowRoot.querySelector('#create-room');
     if (createBtn) {
       createBtn.addEventListener('click', () => {
-        if (!playerName.value) {
+        const nameInputValue = nameInput ? nameInput.value.trim() : '';
+        if (!nameInputValue) {
           alert('Please enter your name first!');
+          nameInput?.focus();
           return;
         }
+        playerName.value = nameInputValue;
         const code = createRoom();
         this.showRoomCode(code);
       });
@@ -59,14 +71,18 @@ export class MultiplayerLobby extends HTMLElement {
     const codeInput = this.shadowRoot.querySelector('#room-code');
     if (joinBtn && codeInput) {
       joinBtn.addEventListener('click', () => {
-        if (!playerName.value) {
+        const nameInputValue = nameInput ? nameInput.value.trim() : '';
+        if (!nameInputValue) {
           alert('Please enter your name first!');
+          nameInput?.focus();
           return;
         }
-        if (!codeInput.value) {
+        if (!codeInput.value.trim()) {
           alert('Please enter a room code!');
+          codeInput.focus();
           return;
         }
+        playerName.value = nameInputValue;
         joinRoom(codeInput.value);
       });
       
@@ -150,17 +166,52 @@ export class MultiplayerLobby extends HTMLElement {
       hostBadge.style.display = isHost.value ? 'inline-block' : 'none';
     }
     
-    // Update player list
+    // Update player list with character assignments
     const playerList = this.shadowRoot.querySelector('.player-list');
     if (playerList) {
-      playerList.innerHTML = roomPlayers.value
+      const assignments = characterAssignments.value;
+      let html = '<div style="font-weight: bold; margin-bottom: 10px;">Players in Room (Max 4):</div>';
+      
+      // Show active players
+      const activePlayers = roomPlayers.value
         .filter(p => p.active)
-        .map(p => `
-          <div class="player-item">
-            <span class="player-name">${p.name}</span>
-            ${p.id === roomPlayers.value[0]?.id ? '<span class="host-tag">HOST</span>' : ''}
+        .sort((a, b) => a.joinedAt - b.joinedAt)
+        .slice(0, 4);
+        
+      activePlayers.forEach(p => {
+        const assignment = assignments[p.id];
+        const isMe = p.id === localPlayerId.value;
+        const color = assignment?.color || 'gray';
+        html += `
+          <div class="player-item ${isMe ? 'is-me' : ''}" style="border-left: 4px solid ${color};">
+            <div class="player-info">
+              <span class="player-character" style="color: ${color};">${assignment?.character || 'Waiting...'}</span>
+              <span class="player-name">${p.name} ${isMe ? '(You)' : ''}</span>
+            </div>
+            ${isHost.value && isMe ? '<span class="host-tag">HOST</span>' : ''}
           </div>
-        `).join('');
+        `;
+      });
+      
+      // Show empty slots
+      const currentCount = activePlayers.length;
+      const characters = ['Mario', 'Luigi', 'Yoshi', 'Birdo'];
+      const colors = { 'Mario': 'red', 'Luigi': 'green', 'Yoshi': 'blue', 'Birdo': 'pink' };
+      
+      for (let i = currentCount; i < 4; i++) {
+        const character = characters[i];
+        const color = colors[character];
+        html += `
+          <div class="player-item empty-slot" style="border-left: 4px solid ${color}; opacity: 0.5;">
+            <div class="player-info">
+              <span class="player-character" style="color: ${color};">${character}</span>
+              <span class="player-name">Waiting for player...</span>
+            </div>
+          </div>
+        `;
+      }
+      
+      playerList.innerHTML = html;
     }
     
     // Show/hide share button based on capability
@@ -307,13 +358,40 @@ export class MultiplayerLobby extends HTMLElement {
         }
         
         .player-item {
-          padding: 8px;
-          margin: 5px 0;
+          padding: 12px;
+          margin: 8px 0;
           background: white;
           border-radius: 6px;
           display: flex;
           justify-content: space-between;
           align-items: center;
+          transition: all 0.3s ease;
+        }
+        
+        .player-item.is-me {
+          background: #e8f5e9;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .player-item.empty-slot {
+          background: #fafafa;
+          border-style: dashed !important;
+        }
+        
+        .player-info {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        
+        .player-character {
+          font-weight: bold;
+          font-size: 1.1em;
+        }
+        
+        .player-name {
+          font-size: 0.85em;
+          color: #666;
         }
         
         .host-tag {
