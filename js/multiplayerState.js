@@ -2,6 +2,7 @@ import Gun from 'gun/gun';
 import 'gun/sea';
 import 'gun/axe';
 import { signal, effect } from '@preact/signals-core';
+import { setRoomCodeInURL, clearRoomFromURL } from './urlManager.js';
 import { 
   currentPlayer, 
   gameOver, 
@@ -37,6 +38,8 @@ export const roomPlayers = signal([]);
 export const localPlayerId = signal('');
 export const playerCharacter = signal('');
 export const characterAssignments = signal({});
+export const gameReady = signal(false);
+export const roomStarted = signal(false);
 
 // Generate a unique player ID
 function generatePlayerId() {
@@ -62,6 +65,7 @@ export function createRoom() {
   const code = Math.random().toString(36).substr(2, 6).toUpperCase();
   roomCode.value = code;
   isHost.value = true;
+  setRoomCodeInURL(code);
   joinRoom(code);
   return code;
 }
@@ -72,8 +76,17 @@ export function joinRoom(code) {
   console.log('Joining room:', code);
   roomCode.value = code.toUpperCase();
   isConnected.value = true;
+  setRoomCodeInURL(code);
   
   const room = gun.get(`switch-game-room-${roomCode.value}`);
+  
+  // Subscribe to room started state
+  room.get('roomStarted').on((data) => {
+    if (data !== undefined) {
+      roomStarted.value = data;
+      console.log('Room started state:', data);
+    }
+  });
   
   // Subscribe to game state changes
   room.get('gameState').on((data) => {
@@ -123,6 +136,9 @@ export function joinRoom(code) {
       // Update the game players list with character names for display
       if (activePlayers.length > 0) {
         players.value = activePlayers.map(p => newAssignments[p.id].character);
+        gameReady.value = activePlayers.length >= 2; // Need at least 2 players
+      } else {
+        gameReady.value = false;
       }
     }
   });
@@ -155,6 +171,9 @@ export function joinRoom(code) {
       ...playerData,
       active: false
     });
+    if (!isConnected.value) {
+      clearRoomFromURL();
+    }
   });
 }
 
@@ -179,6 +198,18 @@ function syncGameState() {
 }
 
 // Override local game functions with multiplayer versions
+export function startRoomGame() {
+  if (!isHost.value) return;
+  
+  const room = gun.get(`switch-game-room-${roomCode.value}`);
+  room.get('roomStarted').put(true);
+  roomStarted.value = true;
+  
+  // Initialize the game
+  localResetGame();
+  syncGameState();
+}
+
 export function resetGameMultiplayer() {
   if (!isConnected.value) {
     localResetGame();

@@ -12,7 +12,8 @@ import {
   isConnected,
   characterAssignments,
   localPlayerId,
-  playerCharacter
+  playerCharacter,
+  roomStarted
 } from '../multiplayerState.js';
 import { Mario } from './Mario.js';
 import { Luigi } from './Luigi.js';
@@ -111,6 +112,8 @@ export class GameController extends HTMLElement {
   }
   
   render() {
+    const showGame = !isConnected.value || roomStarted.value;
+    
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -249,7 +252,7 @@ export class GameController extends HTMLElement {
           }
         }
       </style>
-      <div class="game-container">
+      <div class="game-container" style="${!showGame ? 'display: none;' : ''}">
         <h1 class="title">Switch Bomb Game ${isConnected.value ? '<span class="multiplayer-status">ONLINE</span>' : ''}</h1>
         
         <div class="players-container">
@@ -281,6 +284,13 @@ export class GameController extends HTMLElement {
           • Last player to press a safe switch wins!
         </div>
       </div>
+      
+      ${!showGame ? `
+        <div class="waiting-room">
+          <h2>Waiting for host to start the game...</h2>
+          <p>Players will appear here as they join the room.</p>
+        </div>
+      ` : ''}
     `;
   }
 }

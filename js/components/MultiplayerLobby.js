@@ -9,8 +9,12 @@ import {
   characterAssignments,
   localPlayerId,
   createRoom,
-  joinRoom
+  joinRoom,
+  gameReady,
+  roomStarted,
+  startRoomGame
 } from '../multiplayerState.js';
+import { getRoomCodeFromURL, getShareableURL } from '../urlManager.js';
 
 export class MultiplayerLobby extends HTMLElement {
   constructor() {
@@ -22,6 +26,18 @@ export class MultiplayerLobby extends HTMLElement {
   connectedCallback() {
     this.render();
     this.setupEventListeners();
+    
+    // Check for room code in URL on load
+    const urlRoomCode = getRoomCodeFromURL();
+    if (urlRoomCode && !isConnected.value) {
+      // Auto-show join form with room code
+      setTimeout(() => {
+        const codeInput = this.shadowRoot.querySelector('#room-code');
+        if (codeInput) {
+          codeInput.value = urlRoomCode;
+        }
+      }, 100);
+    }
     
     // Set initial player name if exists
     const nameInput = this.shadowRoot.querySelector('#player-name');
@@ -94,14 +110,15 @@ export class MultiplayerLobby extends HTMLElement {
       });
     }
     
-    // Copy room code button
+    // Copy room link button
     const copyBtn = this.shadowRoot.querySelector('#copy-code');
     if (copyBtn) {
       copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(roomCode.value).then(() => {
+        const shareUrl = getShareableURL(roomCode.value);
+        navigator.clipboard.writeText(shareUrl).then(() => {
           copyBtn.textContent = 'Copied!';
           setTimeout(() => {
-            copyBtn.textContent = 'Copy Code';
+            copyBtn.textContent = 'Copy Link';
           }, 2000);
         });
       });
@@ -111,17 +128,26 @@ export class MultiplayerLobby extends HTMLElement {
     const shareBtn = this.shadowRoot.querySelector('#share-code');
     if (shareBtn) {
       shareBtn.addEventListener('click', async () => {
+        const shareUrl = getShareableURL(roomCode.value);
         if (navigator.share) {
           try {
             await navigator.share({
               title: 'Switch Bomb Game',
               text: `Join my game! Room code: ${roomCode.value}`,
-              url: window.location.href
+              url: shareUrl
             });
           } catch (err) {
             console.log('Share cancelled');
           }
         }
+      });
+    }
+    
+    // Start game button (host only)
+    const startGameBtn = this.shadowRoot.querySelector('#start-game-btn');
+    if (startGameBtn) {
+      startGameBtn.addEventListener('click', () => {
+        startRoomGame();
       });
     }
   }
@@ -170,7 +196,15 @@ export class MultiplayerLobby extends HTMLElement {
     const playerList = this.shadowRoot.querySelector('.player-list');
     if (playerList) {
       const assignments = characterAssignments.value;
-      let html = '<div style="font-weight: bold; margin-bottom: 10px;">Players in Room (Max 4):</div>';
+      let html = `<div style="font-weight: bold; margin-bottom: 10px;">Players in Room (${roomPlayers.value.filter(p => p.active).length}/4):</div>`;
+      
+      if (!roomStarted.value && gameReady.value) {
+        html += '<div style="background: #e8f5e9; padding: 10px; border-radius: 6px; margin-bottom: 10px; color: #2e7d32;">✅ Ready to start! Host can start the game.</div>';
+      } else if (!roomStarted.value && !gameReady.value) {
+        html += '<div style="background: #fff3e0; padding: 10px; border-radius: 6px; margin-bottom: 10px; color: #e65100;">⏳ Need at least 2 players to start.</div>';
+      } else if (roomStarted.value) {
+        html += '<div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin-bottom: 10px; color: #1565c0;">🎮 Game in progress!</div>';
+      }
       
       // Show active players
       const activePlayers = roomPlayers.value
@@ -212,6 +246,13 @@ export class MultiplayerLobby extends HTMLElement {
       }
       
       playerList.innerHTML = html;
+    }
+    
+    // Show/hide start game button for host
+    const startGameBtn = this.shadowRoot.querySelector('#start-game-btn');
+    if (startGameBtn) {
+      const shouldShow = isHost.value && gameReady.value && !roomStarted.value;
+      startGameBtn.style.display = shouldShow ? 'block' : 'none';
     }
     
     // Show/hide share button based on capability
@@ -435,6 +476,18 @@ export class MultiplayerLobby extends HTMLElement {
           background: #7B1FA2;
         }
         
+        #start-game-btn {
+          background: #FF5722;
+          width: 100%;
+          padding: 15px;
+          font-size: 1.2em;
+          margin-top: 20px;
+        }
+        
+        #start-game-btn:hover {
+          background: #E64A19;
+        }
+        
         @media (max-width: 600px) {
           :host {
             padding: 15px;
@@ -484,14 +537,18 @@ export class MultiplayerLobby extends HTMLElement {
         <div class="host-badge">You are the HOST</div>
         <div>Room Code:</div>
         <div class="code-display"></div>
+        <div style="font-size: 0.9em; color: #666; margin: 10px 0;">Share this link with friends!</div>
         <div class="button-group">
-          <button id="copy-code">Copy Code</button>
+          <button id="copy-code">Copy Link</button>
           <button id="share-code">Share</button>
         </div>
         
         <div class="player-list">
-          <div style="font-weight: bold; margin-bottom: 10px;">Players in Room:</div>
         </div>
+        
+        <button id="start-game-btn" style="display: none;">
+          🎮 Start Game
+        </button>
       </div>
     `;
   }
